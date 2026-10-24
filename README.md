@@ -1,13 +1,37 @@
 # GitHub Settings Exporter
 
-GitHub Repository 의 Settings 페이지들을 순서대로 방문해서, **사용자가 지정한 설정 컨테이너(root) 안의 현재 설정값만** 구조화하여 TXT / JSON 으로 복사할 수 있게 해 주는 Chrome 확장프로그램(Manifest V3)입니다.
-결과를 ChatGPT 등에 붙여넣어 Repository 설정 상태를 분석하는 용도를 가정합니다.
+GitHub 저장소의 설정 페이지를 순서대로 확인하고, 화면에 표시된 설정을 TXT 또는 JSON으로 내보내는 Chrome 확장 프로그램입니다. 설정값을 변경하지 않으며, 작업은 사용자가 시작하고 결과는 브라우저에 로컬 저장됩니다.
 
-> **먼저 읽어 주세요 — 검증 범위**
-> 이 프로젝트는 가짜 Chrome API + jsdom 으로 만든 오프라인 테스트(27개 시나리오)에서 통과했습니다. 그리고 **사용자가 실제 Chrome 에서 공개 Repository(본인 소유) 하나에 대해 8개 Section 을 모두 success 로 추출한 결과**를 확인했습니다(root `main`, 아래 [테스트 현황](#테스트-현황) 참고). 그 밖의 계정/권한/조직/로그인 화면 등은 검증하지 못했습니다.
-> `config.js` 의 path 와 `root: "main"` 은 "수정 가능한 기본 예시"이며, 추출 품질(잡음)은 root 를 좁히면 개선됩니다.
+Manifest V3 기반으로 동작하며, 로그인 정보나 Secret 값은 읽지 않습니다. 민감한 값으로 보이는 데이터는 결과에서 제외하거나 가립니다.
 
----
+> **검증 범위:** 오프라인 테스트는 가짜 Chrome API와 jsdom을 사용합니다. 실제 Chrome에서는 공개 저장소 하나의 8개 설정 섹션을 확인했습니다. 다른 계정, 권한, 조직 정책과 GitHub UI는 검증되지 않았으며, 기본 경로와 selector는 예시입니다.
+
+## 주요 기능
+
+- 설정 섹션을 순서대로 추출하고 진행 상태를 저장합니다.
+- TXT 및 구조화된 JSON 결과를 미리 보고 복사할 수 있습니다.
+- 작업을 중지하고 이어받을 수 있으며 성공한 섹션은 건너뜁니다.
+- 별도의 백그라운드 탭에서 작업해 현재 보고 있는 탭을 유지합니다.
+- 민감한 값은 여러 단계에서 검사하고, 결과를 외부 서버로 전송하지 않습니다.
+
+## 목차
+
+- [설치](#1-설치)
+- [사용법](#2-사용법-팝업)
+- [첫 테스트](#3-첫-테스트-general-하나만)
+- [설정](#4-configjs-에서-수정하는-항목)
+- [개인정보와 보안](#8-보안개인정보)
+- [테스트](#10-테스트-현황)
+- [알려진 한계](#12-알려진-한계)
+- [문제 해결](#11-문제-해결)
+- [기여하기](#기여하기)
+- [라이선스](#라이선스)
+
+## 요구 사항
+
+- Google Chrome 114 이상
+- GitHub 저장소 설정을 볼 수 있는 권한
+- `https://github.com/*` 페이지 (GitHub Enterprise Server 등 다른 호스트는 지원하지 않습니다)
 
 ## 1. 설치
 
@@ -25,14 +49,14 @@ GitHub Repository 의 Settings 페이지들을 순서대로 방문해서, **사�
 
 ## 2. 사용법 (팝업)
 
-| 버튼 | 동작 |
-| --- | --- |
-| 새로 시작 | 현재 탭의 Repository 를 대상으로 새 세션을 시작합니다. 기존 결과가 있으면 한 번 더 눌러 확인해야 하며, 기존 결과는 삭제됩니다. |
-| 이어받기 | 중지/중단된 세션을 이어갑니다. 성공한 Section 은 다시 추출하지 않고, 실패·timeout·중단·미처리 Section 만 처리합니다. |
-| 중지 | 현재 상태를 저장하고 Shadow Tab 을 닫습니다. 이미 저장된 결과는 유지됩니다. |
-| Shadow Tab 열기 | (로그인/인증 때문에 일시 중지됐을 때) 작업용 탭을 앞으로 가져옵니다. 거기서 직접 인증을 마친 뒤 이어받기를 누릅니다. |
-| 세션 초기화 | 세션과 저장된 결과를 모두 삭제합니다(실행 중에는 불가). |
-| TXT 복사 / JSON 복사 | **버튼을 눌렀을 때만** 클립보드에 복사합니다. |
+| 버튼                 | 동작                                                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 새로 시작            | 현재 탭의 Repository 를 대상으로 새 세션을 시작합니다. 기존 결과가 있으면 한 번 더 눌러 확인해야 하며, 기존 결과는 삭제됩니다. |
+| 이어받기             | 중지/중단된 세션을 이어갑니다. 성공한 Section 은 다시 추출하지 않고, 실패·timeout·중단·미처리 Section 만 처리합니다.           |
+| 중지                 | 현재 상태를 저장하고 Shadow Tab 을 닫습니다. 이미 저장된 결과는 유지됩니다.                                                    |
+| Shadow Tab 열기      | (로그인/인증 때문에 일시 중지됐을 때) 작업용 탭을 앞으로 가져옵니다. 거기서 직접 인증을 마친 뒤 이어받기를 누릅니다.           |
+| 세션 초기화          | 세션과 저장된 결과를 모두 삭제합니다(실행 중에는 불가).                                                                        |
+| TXT 복사 / JSON 복사 | **버튼을 눌렀을 때만** 클립보드에 복사합니다.                                                                                  |
 
 - 사용자가 보고 있는 탭은 이동하지 않습니다. 작업은 `active: false` 인 **Shadow Tab** 하나에서 이루어지고, 끝나면(또는 중지하면) 닫힙니다.
 - 팝업을 닫아도 작업은 계속되며, 다시 열면 저장된 세션에서 화면이 복구됩니다.
@@ -61,25 +85,25 @@ GitHub Repository 의 Settings 페이지들을 순서대로 방문해서, **사�
 
 ## 4. config.js 에서 수정하는 항목
 
-| 위치 | 의미 |
-| --- | --- |
-| `sections[]` 배열 **순서** | 곧 실행 순서입니다. 순서를 바꾸면 실행 순서도 바뀝니다(새로 시작할 때 적용). |
-| `sections[].path` | `https://github.com/<owner>/<repo>` 뒤에 붙는 경로. 계정 권한/GitHub 변경에 따라 달라질 수 있어 예시로만 제공됩니다. |
-| `selectors.root` | 추출 범위가 되는 컨테이너. **실제 DOM 에서 확인한 값으로 바꾸세요**(5절). |
-| `selectors.ignore` | root 안에서 추출에서 제외할 하위 요소 selector 목록. |
-| `actions` | 기본은 빈 배열(아무것도 클릭하지 않음). 6절 참고. |
-| `options.enabled` / `options.timeoutMs` | Section 사용 여부 / 페이지 안 추출 단계(root 탐색+안정화+추출)의 시간 예산. |
-| `navigation.mode` | `normal-with-hard-reload-fallback`(기본) 또는 `always-reload`(Section 마다 로딩 후 hard reload 1회). |
-| `navigation.*TimeoutMs`, `reloadRetryCount` | 이동/handshake timeout, Section 당 복구 재시도 횟수. |
-| `extraction.rootTimeoutMs`, `domStable*` | root 대기 시간, DOM 안정(변경 없음) 판단 시간과 최대 대기. |
-| `extraction.onDomStabilityTimeout` | `"proceed"`(경고를 남기고 현재 DOM 추출) / `"fail"`(timeout 처리). |
-| `extraction.includeHiddenElements` | `true` 면 보이지 않는 요소(닫힌 `<details>` 내부 포함)도 탐색. |
-| `extraction.ignoreTags` | 탐색에서 제외할 태그(기본 `nav`, `footer`). |
-| `extraction.ignoreTextPatterns` | 텍스트 노드 **전체**가 이 정규식(대소문자 무시)에 일치하면 버립니다. 기본은 스피너 문구 `Loading`. 한국어 UI 면 `"^로딩 중$"` 처럼 추가하세요. |
-| `extraction.max*` | 항목/텍스트/문자열/Section 크기 제한. 제한에 걸리면 결과에 `truncated` 로 표시됩니다. |
-| `resume.*` | 이어받기 정책(성공 Section 건너뛰기, 실패 재시도). |
-| `metadata.enabled` | Repository 메인 페이지의 "화면에 보이는" 정보 수집(새로 시작할 때만 적용). |
-| `security.*` | 민감값 처리 옵션. `neverExtractSecretValues` 는 코드에서 항상 `true` 로 강제됩니다. |
+| 위치                                        | 의미                                                                                                                                           |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sections[]` 배열 **순서**                  | 곧 실행 순서입니다. 순서를 바꾸면 실행 순서도 바뀝니다(새로 시작할 때 적용).                                                                   |
+| `sections[].path`                           | `https://github.com/<owner>/<repo>` 뒤에 붙는 경로. 계정 권한/GitHub 변경에 따라 달라질 수 있어 예시로만 제공됩니다.                           |
+| `selectors.root`                            | 추출 범위가 되는 컨테이너. **실제 DOM 에서 확인한 값으로 바꾸세요**(5절).                                                                      |
+| `selectors.ignore`                          | root 안에서 추출에서 제외할 하위 요소 selector 목록.                                                                                           |
+| `actions`                                   | 기본은 빈 배열(아무것도 클릭하지 않음). 6절 참고.                                                                                              |
+| `options.enabled` / `options.timeoutMs`     | Section 사용 여부 / 페이지 안 추출 단계(root 탐색+안정화+추출)의 시간 예산.                                                                    |
+| `navigation.mode`                           | `normal-with-hard-reload-fallback`(기본) 또는 `always-reload`(Section 마다 로딩 후 hard reload 1회).                                           |
+| `navigation.*TimeoutMs`, `reloadRetryCount` | 이동/handshake timeout, Section 당 복구 재시도 횟수.                                                                                           |
+| `extraction.rootTimeoutMs`, `domStable*`    | root 대기 시간, DOM 안정(변경 없음) 판단 시간과 최대 대기.                                                                                     |
+| `extraction.onDomStabilityTimeout`          | `"proceed"`(경고를 남기고 현재 DOM 추출) / `"fail"`(timeout 처리).                                                                             |
+| `extraction.includeHiddenElements`          | `true` 면 보이지 않는 요소(닫힌 `<details>` 내부 포함)도 탐색.                                                                                 |
+| `extraction.ignoreTags`                     | 탐색에서 제외할 태그(기본 `nav`, `footer`).                                                                                                    |
+| `extraction.ignoreTextPatterns`             | 텍스트 노드 **전체**가 이 정규식(대소문자 무시)에 일치하면 버립니다. 기본은 스피너 문구 `Loading`. 한국어 UI 면 `"^로딩 중$"` 처럼 추가하세요. |
+| `extraction.max*`                           | 항목/텍스트/문자열/Section 크기 제한. 제한에 걸리면 결과에 `truncated` 로 표시됩니다.                                                          |
+| `resume.*`                                  | 이어받기 정책(성공 Section 건너뛰기, 실패 재시도).                                                                                             |
+| `metadata.enabled`                          | Repository 메인 페이지의 "화면에 보이는" 정보 수집(새로 시작할 때만 적용).                                                                     |
+| `security.*`                                | 민감값 처리 옵션. `neverExtractSecretValues` 는 코드에서 항상 `true` 로 강제됩니다.                                                            |
 
 세션을 시작/이어받는 시점의 설정이 세션에 스냅샷으로 저장됩니다. **이어받기 때는** 같은 `id` 의 Section 정의(`path`, `selectors`, `actions`, `timeoutMs`, `enabled`)와 전역 설정이 현재 `config.js` 값으로 갱신되고, 새로 추가된 Section 은 뒤에 붙습니다(실행 순서는 세션 순서 유지). 그래서 "selector 를 고친 뒤 실패한 Section 만 다시" 흐름이 가능합니다. 이전 실패 기록은 Section 의 `history` 에 보존됩니다.
 
@@ -92,15 +116,29 @@ GitHub Repository 의 Settings 페이지들을 순서대로 방문해서, **사�
 3. selector 는 **안정적인 속성을 우선**합니다: `id`, `data-*`, `aria-label`, `role`, 의미 있는 태그. 해시처럼 보이는 클래스명, `:nth-child()` 위주의 selector 는 GitHub 배포 때마다 깨질 수 있어 피하세요.
 4. 콘솔에서 확인합니다. 결과가 정확히 1개여야 하고, 보이는 설정이 모두 그 안에 있어야 합니다.
    ```js
-   document.querySelectorAll('여기에-selector').length
+   document.querySelectorAll("여기에-selector").length;
    ```
    후보를 찾는 데 도움이 되는 스니펫:
    ```js
-   [...document.querySelectorAll('main [id], main form, main section, main [data-testid], main [aria-label]')]
-     .map(e => ({ sel: e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (e.getAttribute('data-testid') ? '[data-testid="' + e.getAttribute('data-testid') + '"]' : ''),
-                  controls: e.querySelectorAll('input,select,textarea,[role="switch"],[role="checkbox"]').length,
-                  textLen: e.textContent.length }))
-     .filter(x => x.controls > 0).slice(0, 30)
+   [
+     ...document.querySelectorAll(
+       "main [id], main form, main section, main [data-testid], main [aria-label]",
+     ),
+   ]
+     .map((e) => ({
+       sel:
+         e.tagName.toLowerCase() +
+         (e.id ? "#" + e.id : "") +
+         (e.getAttribute("data-testid")
+           ? '[data-testid="' + e.getAttribute("data-testid") + '"]'
+           : ""),
+       controls: e.querySelectorAll(
+         'input,select,textarea,[role="switch"],[role="checkbox"]',
+       ).length,
+       textLen: e.textContent.length,
+     }))
+     .filter((x) => x.controls > 0)
+     .slice(0, 30);
    ```
 5. 찾은 selector 를 `config.js` 의 해당 Section `selectors.root` 에 넣고, 남는 잡음은 `selectors.ignore` 에 넣습니다.
 6. 확장프로그램을 새로고침하고 그 Section 만 `enabled: true` 로 테스트합니다. 실패 시 팝업에 `root_not_found`(selector 불일치) 또는 `invalid_root_selector`(문법 오류)가 표시됩니다.
@@ -113,8 +151,12 @@ root 를 못 찾으면 `rootTimeoutMs` 후 **그 Section 만** 실패로 기록�
 
 ```js
 actions: [
-  { type: "expand", selector: "details.my-advanced, button[aria-controls='my-panel']", waitAfterMs: 700 }
-]
+  {
+    type: "expand",
+    selector: "details.my-advanced, button[aria-controls='my-panel']",
+    waitAfterMs: 700,
+  },
+];
 ```
 
 - 지원하는 type 은 `expand` 뿐입니다. 일반 `click` action 은 **의도적으로 제공하지 않습니다.**
@@ -125,6 +167,7 @@ actions: [
 ## 7. 출력
 
 ### TXT
+
 사람이 읽기 쉬운 형식입니다. 체크박스는 `checked/unchecked`, switch 는 `on/off`, 라디오는 그룹으로 묶어 `- Visibility: Private  (options: Public | Private*)` 처럼, `disabled/required/read-only` 는 `[...]` 로, 가까운 설명은 `note:` 로 표시합니다. 실패한 Section 도 `Status` 와 `Error:` 줄로 남습니다.
 
 ```
@@ -143,13 +186,26 @@ Section:
 ```
 
 ### JSON
+
 정규화된 전체 결과입니다(`schemaVersion`, `repository`, `session`, `summary`, `sections[]`). `summary` 는 실제 Section 상태에서 계산합니다. 각 항목 예:
 
 ```json
-{ "key": "repository[has_issues]", "keyBasis": "name", "type": "checkbox", "label": "Issues", "labelSource": "parent-label",
-  "value": true, "state": { "checked": true, "disabled": false, "required": false },
-  "description": "Track bugs and tasks.", "context": "Features",
-  "source": { "tagName": "INPUT", "inputType": "checkbox", "name": "repository[has_issues]" } }
+{
+  "key": "repository[has_issues]",
+  "keyBasis": "name",
+  "type": "checkbox",
+  "label": "Issues",
+  "labelSource": "parent-label",
+  "value": true,
+  "state": { "checked": true, "disabled": false, "required": false },
+  "description": "Track bugs and tasks.",
+  "context": "Features",
+  "source": {
+    "tagName": "INPUT",
+    "inputType": "checkbox",
+    "name": "repository[has_issues]"
+  }
+}
 ```
 
 - `key` 는 `name` → `data-testid` → `data-test-selector` → (불안정해 보이지 않는) `id` → 라벨 → 위치 순으로 만든 식별자이고 `keyBasis` 가 그 근거입니다. 사용자가 읽을 `label` 과 별개입니다.
@@ -185,60 +241,65 @@ Popup ──(메시지)──► Background service worker ──► Shadow Tab 
 - 저장 키: `gse:session`(세션 + Section 메타), `gse:data:s<id>` / `gse:data:meta`(Section 별 결과), `gse:log`(최소 로그). 확인: `chrome://extensions` → 이 확장프로그램의 "서비스 워커" 검사 → Application → Storage → Extension storage → Local.
 
 ### Section 오류 유형
+
 `navigation_timeout`, `handshake_timeout`, `root_not_found`, `invalid_root_selector`, `dom_stability_timeout`, `section_timeout`, `extraction_error`, `navigation_error`, `storage_error`, `page_not_found`(HTTP 404 — GitHub 는 권한이 없는 설정 페이지에도 404 를 응답), `permission_denied`(403), `http_error`(5xx), `unexpected_redirect`, `authentication_required`, `captcha_required`, `rate_limited`, `external_redirect`, `session_interrupted`, `stopped_by_user`, `unknown_error`.
 
 ## 10. 테스트 현황
 
 ### 실제 Chrome + 실제 GitHub 실행 결과 (사용자 제공)
+
 공개 Repository(본인 소유)에서 기본 `config.js`(root `main`)로 실행해 8개 Section 모두 `success`(약 16초)로 끝났고, 팝업/TXT/JSON 출력이 생성되었습니다. 이 결과로 확인된 것: Shadow Tab 이동·handshake·root 탐색·DOM 안정화·추출·저장·내보내기가 실제 Chrome 에서 동작함, `main#js-repo-pjax-container` 가 root 로 잡힘, 라디오 그룹/체크박스/버튼형 드롭다운/`aria-pressed` 토글이 추출됨. 이 결과에서 발견된 문제(엉뚱한 heading 아래로 묶임, `Loading` 잡음, UUID 가 든 id 로 key 생성, 토글 버튼 글자 누락)는 수정되었습니다.
 
 ### 오프라인 자동 테스트 (통과) — 가짜 Chrome API + jsdom
+
 `tests/` 폴더에 있습니다. 실제 소스 파일을 그대로 실행하며 `chrome.*` 와 페이지만 가짜입니다. 실행: `cd tests && npm install && node tests.js` (Node 18+, 일부만: `node tests.js T6`).
 
-| 항목 | 상태 |
-| --- | --- |
-| 정상 흐름, 배열 순서대로 이동, 사용자 탭 유지, Shadow Tab 생성/정리 | 자동 테스트 통과 |
-| root 내부만 추출 / ignore selector / ignoreTags / root 자신 일치 | 자동 테스트 통과 |
-| 라벨 우선순위, 설명 연결, key 유일성, 라디오 그룹, select, ARIA(switch/listbox/tab) | 자동 테스트 통과 |
-| 열린 Shadow DOM 추출 / 닫힌 Shadow DOM 우회 안 함 | 자동 테스트 통과 |
-| 닫힌 `<details>` 제외, `expand` 로 펼치기, 위험/제출/팝업 컨트롤 클릭 안 함 | 자동 테스트 통과 |
-| password / hidden / 식별자 패턴 / 토큰 모양 값 제거(저장소·TXT·JSON 모두) | 자동 테스트 통과 |
-| 잘못된 root selector, 404 경로, 비활성 Section 건너뛰기, 오류 격리 | 자동 테스트 통과 |
-| handshake 실패 → 재주입 → reload → 소진 후 timeout 기록, 로딩 지연 timeout | 자동 테스트 통과 |
-| `always-reload` 모드, DOM 안정화 `proceed`/`fail` | 자동 테스트 통과 |
-| 중지/이어받기, 늦은·위조·중복 응답 폐기, 중복 시작 거부, 새로 시작 시 이전 data 삭제 | 자동 테스트 통과 |
+| 항목                                                                                                              | 상태             |
+| ----------------------------------------------------------------------------------------------------------------- | ---------------- |
+| 정상 흐름, 배열 순서대로 이동, 사용자 탭 유지, Shadow Tab 생성/정리                                               | 자동 테스트 통과 |
+| root 내부만 추출 / ignore selector / ignoreTags / root 자신 일치                                                  | 자동 테스트 통과 |
+| 라벨 우선순위, 설명 연결, key 유일성, 라디오 그룹, select, ARIA(switch/listbox/tab)                               | 자동 테스트 통과 |
+| 열린 Shadow DOM 추출 / 닫힌 Shadow DOM 우회 안 함                                                                 | 자동 테스트 통과 |
+| 닫힌 `<details>` 제외, `expand` 로 펼치기, 위험/제출/팝업 컨트롤 클릭 안 함                                       | 자동 테스트 통과 |
+| password / hidden / 식별자 패턴 / 토큰 모양 값 제거(저장소·TXT·JSON 모두)                                         | 자동 테스트 통과 |
+| 잘못된 root selector, 404 경로, 비활성 Section 건너뛰기, 오류 격리                                                | 자동 테스트 통과 |
+| handshake 실패 → 재주입 → reload → 소진 후 timeout 기록, 로딩 지연 timeout                                        | 자동 테스트 통과 |
+| `always-reload` 모드, DOM 안정화 `proceed`/`fail`                                                                 | 자동 테스트 통과 |
+| 중지/이어받기, 늦은·위조·중복 응답 폐기, 중복 시작 거부, 새로 시작 시 이전 data 삭제                              | 자동 테스트 통과 |
 | service worker 종료 후 재개(content 결과 메시지/탭 이벤트/watchdog 알람), 브라우저 재시작 후 이어받기(시뮬레이션) | 자동 테스트 통과 |
-| Shadow Tab 을 사용자가 닫음, 로그인 리다이렉트/CAPTCHA/429 일시 중지와 이어받기 | 자동 테스트 통과 |
-| 이어받기 정책, config 수정 반영, 크기 제한(truncated 표시), metadata, popup 닫았다 열기·복사 | 자동 테스트 통과 |
+| Shadow Tab 을 사용자가 닫음, 로그인 리다이렉트/CAPTCHA/429 일시 중지와 이어받기                                   | 자동 테스트 통과 |
+| 이어받기 정책, config 수정 반영, 크기 제한(truncated 표시), metadata, popup 닫았다 열기·복사                      | 자동 테스트 통과 |
 
 ### 실제 Chrome + 실제 GitHub 에서는 **아직 검증하지 않았습니다**
+
 아래는 직접 확인이 필요합니다(예상 결과 포함).
 
-| 확인할 것 | 방법 | 예상 결과 |
-| --- | --- | --- |
-| 각 Section path 가 실제로 열리는가 | 한 Section 씩 `enabled:true` | 해당 설정 페이지로 이동, 권한이 없으면 `page_not_found`(404) |
-| 실제 root selector / 추출 품질 | 5절 절차 | 설정 컨트롤이 `items` 에 올바른 label/value 로 나옴 |
-| GitHub 의 custom dropdown(버튼 형태)이 현재 선택값으로 나오는가 | General/Branches 확인 | `dropdown-trigger` 항목의 `value` 가 화면의 선택 텍스트 |
-| 백그라운드(비활성) 탭에서 DOM 추출 | 실제 실행 | 성공. 타이머가 초 단위로 throttling 될 수 있어 다소 느릴 수 있음 |
-| 추출 도중 Shadow Tab 닫기 / 실제 브라우저 종료 후 이어받기 | 직접 닫기 / Chrome 종료 후 재실행 | `interrupted` 로 저장, 이어받기 시 새 탭으로 계속 |
-| 실제 로그인 화면/SSO/2FA/sudo/CAPTCHA 리다이렉트 | 로그아웃 상태 또는 SSO 조직 Repository | 분석 없이 일시 중지, Shadow Tab 에서 인증 후 이어받기 |
-| 닫힌 Shadow DOM 이 있는 실제 페이지 | 해당 페이지 추출 | 그 부분은 누락(우회하지 않음). `Notes` 에 표시되지 않으므로 화면과 대조 필요 |
-| 장시간 실행에서의 service worker 재시작 | 실행 중 `chrome://serviceworker-internals` 에서 중지 | 다음 이벤트에서 깨어나 이어서 진행 |
+| 확인할 것                                                       | 방법                                                 | 예상 결과                                                                    |
+| --------------------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 각 Section path 가 실제로 열리는가                              | 한 Section 씩 `enabled:true`                         | 해당 설정 페이지로 이동, 권한이 없으면 `page_not_found`(404)                 |
+| 실제 root selector / 추출 품질                                  | 5절 절차                                             | 설정 컨트롤이 `items` 에 올바른 label/value 로 나옴                          |
+| GitHub 의 custom dropdown(버튼 형태)이 현재 선택값으로 나오는가 | General/Branches 확인                                | `dropdown-trigger` 항목의 `value` 가 화면의 선택 텍스트                      |
+| 백그라운드(비활성) 탭에서 DOM 추출                              | 실제 실행                                            | 성공. 타이머가 초 단위로 throttling 될 수 있어 다소 느릴 수 있음             |
+| 추출 도중 Shadow Tab 닫기 / 실제 브라우저 종료 후 이어받기      | 직접 닫기 / Chrome 종료 후 재실행                    | `interrupted` 로 저장, 이어받기 시 새 탭으로 계속                            |
+| 실제 로그인 화면/SSO/2FA/sudo/CAPTCHA 리다이렉트                | 로그아웃 상태 또는 SSO 조직 Repository               | 분석 없이 일시 중지, Shadow Tab 에서 인증 후 이어받기                        |
+| 닫힌 Shadow DOM 이 있는 실제 페이지                             | 해당 페이지 추출                                     | 그 부분은 누락(우회하지 않음). `Notes` 에 표시되지 않으므로 화면과 대조 필요 |
+| 장시간 실행에서의 service worker 재시작                         | 실행 중 `chrome://serviceworker-internals` 에서 중지 | 다음 이벤트에서 깨어나 이어서 진행                                           |
 
 ## 11. 문제 해결
 
-| 증상 | 원인 / 조치 |
-| --- | --- |
-| "GitHub Repository 페이지에서 열라" 고 나옴 | 활성 탭이 `https://github.com/<owner>/<repo>...` 가 아님. 팝업은 활성 탭 URL 로 대상을 정합니다. |
-| 항상 `root_not_found` | selector 불일치. 5절로 다시 확인. 또는 `rootTimeoutMs` 증가. |
-| 결과에 잡음이 많음 | root 를 좁히고 `selectors.ignore` 추가, `extraction.ignoreTags` 조정. |
-| 보이는 설정이 일부 빠짐 | 접힌 영역이면 6절 `expand`, 또는 `includeHiddenElements:true`(숨김 요소까지 포함되어 잡음 증가). 닫힌 Shadow DOM/iframe 안이면 추출 불가. |
-| `handshake_timeout` | 확장프로그램을 새로고침한 직후 열린 탭이거나 GitHub 가 느림. 자동으로 재주입 → reload 를 시도합니다. 반복되면 `navigation.handshakeTimeoutMs` 증가. |
-| `page_not_found`(404) | path 가 틀렸거나 이 계정에 해당 설정 권한이 없음(GitHub 는 404 로 응답). |
-| 일시 중지 후 이어받기가 바로 다시 중지됨 | 아직 인증이 끝나지 않음. "Shadow Tab 열기"로 인증 완료 후 이어받기. |
-| Chrome 메모리 절약(Memory Saver) | 오래 걸리는 작업 중 비활성 탭이 폐기될 수 있음. 이 경우 timeout → 자동 재시도됩니다. |
+| 증상                                        | 원인 / 조치                                                                                                                                         |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "GitHub Repository 페이지에서 열라" 고 나옴 | 활성 탭이 `https://github.com/<owner>/<repo>...` 가 아님. 팝업은 활성 탭 URL 로 대상을 정합니다.                                                    |
+| 항상 `root_not_found`                       | selector 불일치. 5절로 다시 확인. 또는 `rootTimeoutMs` 증가.                                                                                        |
+| 결과에 잡음이 많음                          | root 를 좁히고 `selectors.ignore` 추가, `extraction.ignoreTags` 조정.                                                                               |
+| 보이는 설정이 일부 빠짐                     | 접힌 영역이면 6절 `expand`, 또는 `includeHiddenElements:true`(숨김 요소까지 포함되어 잡음 증가). 닫힌 Shadow DOM/iframe 안이면 추출 불가.           |
+| `handshake_timeout`                         | 확장프로그램을 새로고침한 직후 열린 탭이거나 GitHub 가 느림. 자동으로 재주입 → reload 를 시도합니다. 반복되면 `navigation.handshakeTimeoutMs` 증가. |
+| `page_not_found`(404)                       | path 가 틀렸거나 이 계정에 해당 설정 권한이 없음(GitHub 는 404 로 응답).                                                                            |
+| 일시 중지 후 이어받기가 바로 다시 중지됨    | 아직 인증이 끝나지 않음. "Shadow Tab 열기"로 인증 완료 후 이어받기.                                                                                 |
+| Chrome 메모리 절약(Memory Saver)            | 오래 걸리는 작업 중 비활성 탭이 폐기될 수 있음. 이 경우 timeout → 자동 재시도됩니다.                                                                |
 
 ## 12. 알려진 한계
+
 - `aria-pressed` 토글 버튼은 `pressed` / `not pressed` 로만 기록합니다(켜짐/꺼짐으로 해석하지 않음). 버튼에 보이는 글자(예: Enable)가 있으면 `button text` 로 함께 기록합니다. 어느 쪽이 "켜짐"인지는 화면과 대조해 확인하세요.
 - `context`(항목이 속한 섹션)는 "페이지에서 2번 이상 나타나는 가장 얕은 heading 수준(2 이상)"으로 정하는 휴리스틱입니다. 소제목은 `nearestHeading` 으로 따로 남깁니다.
 
@@ -273,3 +334,17 @@ github-settings-exporter/
 ```
 
 `config.js` 를 content script 목록에서 뺀 이유: 설정은 service worker 가 읽어 세션에 스냅샷으로 저장하고, content script 에는 필요한 값만 메시지로 전달합니다(설정의 단일 출처 유지).
+
+## 기여하기
+
+버그 제보와 개선 제안을 환영합니다. 이슈에는 재현 절차와 기대한 동작을 적어 주세요. 변경 사항을 제출하기 전에는 오프라인 테스트를 실행하고, 실제 Chrome이나 GitHub에서 확인하지 못한 동작은 그 검증 범위를 함께 밝혀 주세요.
+
+```bash
+cd tests
+npm install
+npm test
+```
+
+## 라이선스
+
+이 프로젝트는 [MIT License](LICENSE)로 배포됩니다.
