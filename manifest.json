@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "GitHub Settings Exporter",
+  "version": "1.0.0",
+  "description": "Extract selected GitHub repository settings into structured text and JSON.",
+  "minimum_chrome_version": "114",
+  "permissions": [
+    "storage",
+    "scripting",
+    "alarms",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "https://github.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "GitHub Settings Exporter",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://github.com/*"
+      ],
+      "js": [
+        "security.js",
+        "extractor.js",
+        "metadata.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

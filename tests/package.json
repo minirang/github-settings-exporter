@@ -1,0 +1,7 @@
+{
+  "name": "gse-offline-tests",
+  "private": true,
+  "description": "GitHub Settings Exporter 오프라인 테스트(가짜 chrome.* API + jsdom)",
+  "scripts": { "test": "node tests.js" },
+  "dependencies": { "jsdom": "^30.1.3" }
+}
